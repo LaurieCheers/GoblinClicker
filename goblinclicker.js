@@ -1,12 +1,15 @@
+var accelerationCheat = 10;
+
 var resources = 
 {
   "goblinseed":{"displayname":"Goblinseeds", "image":"dna.png", "amount":3},
   "berries":{"displayname":"Berries", "image":"berry.png", "amount":290},
   "meat":{"displayname":"Meat", "image":"meat.png", "amount":0},
-  "exploration":{"displayname":"Miles Explored", "image":"exploration.png", "amount":0},
+  "exploration":{"displayname":"Miles Scouted", "image":"exploration.png", "amount":0, "subtype":"knowledge"},
   "gold":{"displayname":"Gold", "image":"gold.png", "amount":0},
   "wood":{"displayname":"Wood", "image":"wood.png", "amount":0},
   "goats":{"displayname":"Goats", "image":"goat.png", "amount":0},
+  "arcane":{"displayname":"Arcane Lore", "image":"arcane.png", "amount":0, "subtype":"knowledge"},
 }
 
 var LOCATION_HIDDEN = undefined;
@@ -53,18 +56,32 @@ var locations =
 		]
 	},
 	"unknownlands":{"displayname":"Unknown Lands", "image":"map.png", "state":LOCATION_ACTIVE,
-		"actions":[{"name":"Explore", "income":{"exploration":0.01}}]
+		"actions":[{"name":"Scout", "income":{"exploration":0.1}}]
 	},
 	
-	"huntingground":{"displayname":"Hunting Ground", "explore":3, "image":"huntingground.png",
+	"huntingground":{"displayname":"Hunting Ground", "discovery":{"type":"exploration", "amount":20}, "image":"huntingground.png",
 		"actions":[{"name":"Hunt", "income":{"meat":0.1}}]
 	},
-	"deepwood":{"displayname":"Deepwood", "explore":16, "image":"deepwood.png",
+	
+	"tower":{"displayname":"Abandoned Tower", "discovery":{"type":"exploration", "amount":50}, "image":"tower.png",
+		"actions":[{"name":"Investigate", "work":200, "transform":"library"}]
+	},
+	"library":{"displayname":"Arcane Library", "image":"tower.png",
+		"actions":[{"name":"Study", "income":{"arcane":1}}]
+	},
+	"pentagram_blueprint":{"displayname":"Pentagram", "discovery":{"type":"arcane", "amount":50}, "image":"pentagram_blueprint.png",
+		"actions":[{"name":"Build", "work":200, "transform":"pentagram"}]
+	},
+	"pentagram":{"displayname":"Pentagram", "image":"pentagram.png",
+		"actions":[{"name":"Summon Demon"}]
+	},
+
+	"deepwood":{"displayname":"Deepwood", "discovery":{"type":"exploration", "amount":150}, "image":"deepwood.png",
 		// 1000.1 to prevent rounding errors
 		"actions":[{"name":"Chop Wood", "income":{"wood":0.1}, "resourceLimit":{"wood":1000.1}, "transformWhenExhausted":"deadwood"}],
 	},
 	"deadwood":{"displayname":"Deadwood", "image":"clearcut.png",
-		"actions":[{"name":"Remove Stumps", "work":200, "result":{"goats":2}, "transform":"pasture"}],
+		"actions":[{"name":"Remove Stumps", "work":2000, "result":{"goats":2}, "transform":"pasture"}],
 	},
 	"pasture":{"displayname":"Pastures", "image":"pasture.png",
 		"actions":[{"name":"Breed Goats", "maxWorkers":1,
@@ -107,8 +124,7 @@ var workerTypes =
 var baseWorkerType = workerTypes["empty"];
 var upgradedWorkerType = workerTypes["goblin"];
 var workers = [];
-var tickInterval = 1; // seconds
-var accelerationCheat = 50;
+var tickInterval = 0.1; // seconds
 var idleAction = locations.queen.actions[1];
 idleAction.location = locations.queen;
 
@@ -154,7 +170,7 @@ function tick()
 					for( var resourceName in job.income )
 					{
 						var amountAvailable = job.resources[resourceName];
-						var amountHarvested = job.income[resourceName] * worker.type.strength;
+						var amountHarvested = job.income[resourceName] * worker.type.strength * tickInterval;
 						
 						if( amountAvailable > amountHarvested )
 						{
@@ -177,7 +193,7 @@ function tick()
 				}
 				else
 				{
-					gainResources(job.income, worker.type.strength);
+					gainResources(job.income, worker.type.strength * tickInterval);
 				}
 			}
 
@@ -188,7 +204,7 @@ function tick()
 					job.workDone = 0;
 				}
 				
-				job.workDone += worker.type.strength;
+				job.workDone += worker.type.strength * tickInterval;
 				
 				if( job.workDone >= job.work )
 				{
@@ -201,7 +217,6 @@ function tick()
 	
 	updateResources();
 	updateActions();
-	updateMystery();
 }
 
 
@@ -215,12 +230,6 @@ function updateLocations()
 	{
 		var location = locations[locationName];
 		updateLocation(location);
-		
-		if( nextMystery === undefined && location.state === LOCATION_HIDDEN && location.explore !== undefined )
-		{
-			nextMystery = location;
-			updateMystery();
-		}
 	}
 }
 
@@ -304,34 +313,16 @@ function updateLocation(location)
 	}
 }
 
-function updateMystery()
-{
-	var mysteryNode = document.getElementById("html_mystery");
-	if( nextMystery !== undefined && resources.exploration.amount >= 1 )
-	{
-		if( nextMystery.explore <= resources.exploration.amount )
-		{
-			nextMystery.state = LOCATION_ACTIVE;
-			nextMystery = undefined;
-			updateLocations();
-		}
-		else
-		{
-			mysteryNode.style.display = "initial";
-			var mysteryTextNode = document.getElementById("html_mystery_text");
-			mysteryTextNode.innerText = nextMystery.explore;
-		}
-	}
-	else
-	{
-		mysteryNode.style.display = "none";
-	}	
-}
-
 function transformLocation(location, newLocationName)
 {
 	location.state = LOCATION_DESTROYED;
 	locations[newLocationName].state = LOCATION_ACTIVE;
+	updateLocations();
+}
+
+function discoverLocation(location)
+{
+	location.state = LOCATION_ACTIVE;
 	updateLocations();
 }
 
@@ -885,17 +876,43 @@ function tryToPay(price)
 }
 
 function updateResources()
-{
-	var resourcesArea = document.getElementById("html_resources");
-	
+{	
 	for(var resourceName in resources)
 	{
 		var resourceType = resources[resourceName];
 		
-		if( resourceType.amount >= 1 && resourceType.amountNode === undefined )
+		if( resourceType.amount >= 1 && resourceType.node === undefined )
 		{
 			resourceNode = document.createElement('div');
-			resourcesArea.appendChild(resourceNode);
+			
+			var resourceDiscovery;
+			var resourceDiscoveryAmount;
+			
+			if( resourceType.subtype === "knowledge" )
+			{
+				var knowledgeArea = document.getElementById("html_knowledge_resources");
+				knowledgeArea.appendChild(resourceNode);
+				
+				var knowledgeSubheading = document.getElementById("html_knowledge");
+				knowledgeSubheading.style.display = "initial";
+				
+				resourceDiscovery = document.createElement('em');
+				resourceDiscovery.innerText = " Next Discovery:";
+				
+				resourceDiscoveryAmount = document.createElement('span');
+				resourceDiscoveryAmount.innerText = "0";
+
+				var discoverySuffixNode = document.createElement('span');
+				discoverySuffixNode.innerText = " "+resourceType.displayname;
+				
+				resourceDiscovery.appendChild(resourceDiscoveryAmount);
+				resourceDiscovery.appendChild(discoverySuffixNode);
+			}
+			else
+			{
+				var resourcesArea = document.getElementById("html_resources");
+				resourcesArea.appendChild(resourceNode);
+			}
 			
 			var resourceIcon = document.createElement('img');
 			resourceIcon.src = "images/"+resourceType.image;
@@ -923,10 +940,18 @@ function updateResources()
 				var resourceRateC = document.createElement('span');
 				resourceRateC.innerText = "/s)";
 				resourceSuffix.appendChild(resourceRateC);
+				
+			if( resourceDiscovery !== undefined )
+			{
+				resourceNode.appendChild(resourceDiscovery);
+			}
 			
+			resourceType.node = resourceNode;
 			resourceType.amountNode = resourceAmount;
 			resourceType.suffixNode = resourceSuffix;
 			resourceType.rateNode = resourceRate;
+			resourceType.discoveryNode = resourceDiscovery;
+			resourceType.discoveryAmountNode = resourceDiscoveryAmount;
 		}
 
 		if( resourceType.amountNode !== undefined )
@@ -963,6 +988,43 @@ function updateResources()
 			else
 			{
 				resourceType.suffixNode.style.display = "none";
+			}
+		}
+		
+		if( resourceType.subtype === "knowledge" )
+		{
+			if( resourceType.nextMystery === undefined )
+			{
+				for( var locationName in locations)
+				{
+					var location = locations[locationName];
+					if( location.state === LOCATION_HIDDEN &&
+						location.discovery !== undefined &&
+						location.discovery.type === resourceName &&
+						(resourceType.nextMystery === undefined || resourceType.nextMystery.discovery.amount > location.discovery.amount) )
+					{
+						resourceType.nextMystery = location;
+					}
+				}
+			}
+			
+			if( resourceType.discoveryNode !== undefined )
+			{
+				if( resourceType.nextMystery !== undefined )
+				{
+					resourceType.discoveryNode.style.display = "initial";
+					resourceType.discoveryAmountNode.innerText = resourceType.nextMystery.discovery.amount;
+					
+					if( resourceType.nextMystery.discovery.amount <= resourceType.amount )
+					{
+						discoverLocation(resourceType.nextMystery);
+						resourceType.nextMystery = undefined;
+					}
+				}
+				else
+				{
+					resourceType.discoveryNode.style.display = "none";
+				}
 			}
 		}
 	}
