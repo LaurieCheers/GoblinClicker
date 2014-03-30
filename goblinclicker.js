@@ -12,6 +12,21 @@ var resources =
   "arcane":{"displayname":"Arcane Lore", "image":"arcane.png", "amount":0, "subtype":"knowledge"},
 }
 
+var workerTypes =
+{
+  "empty":{"name":"empty", "displayname":"", "image":"", "strength":0, "upgrade":"goblin"},
+  "goblin":{"name":"goblin", "displayname":"Goblin", "image":"goblin.png", "strength":1, "upgrade":"hobgoblin"},
+  "hobgoblin":{"name":"hobgoblin", "displayname":"Hobgoblin", "image":"hobgoblin.png", "strength":6, "upgrade":"orc"},
+  //"bugbear":{"name":"bugbear", "displayname":"Bugbear", "image":"bugbear.png", "strength":36, "upgrade":"orc"},
+  "orc":{"name":"orc", "displayname":"Orc", "image":"orc.png", "strength":36, "upgrade":"blackorc"},
+  "blackorc":{"name":"blackorc", "displayname":"Black Orc", "image":"blackorc.png", "strength":200, "upgrade":"troll"},
+  "shadow":{"name":"shadow", "displayname":"Shadow", "image":"shadow.png", "strength":200},
+  "troll":{"name":"troll", "displayname":"Troll", "image":"troll.png", "strength":1200, "upgrade":"ogre"},
+  "ogre":{"name":"ogre", "displayname":"Ogre", "image":"ogre.png", "strength":7000, "upgrade":"golem"},
+  "golem":{"name":"golem", "displayname":"Golem", "image":"golem.png", "strength":42000, "upgrade":"giant"},
+  "giant":{"name":"giant", "displayname":"Giant", "image":"giant.png", "strength":250000},
+}
+
 var LOCATION_HIDDEN = undefined;
 var LOCATION_LOCKED = "LOCATION_LOCKED";
 var LOCATION_BUILDABLE = "LOCATION_BUILDABLE";
@@ -22,16 +37,16 @@ var locations =
 {
 	"queen":{"displayname":"Goblin Queen", "image":"queen.png", "state":LOCATION_ACTIVE,
 		"actions":[
-			{"name":"Spawn Goblin", "price":{"berries":100, "goblinseed":1}, "result":spawnGoblin},
+			{"name":"Spawn Goblin", "price":{"berries":100, "goblinseed":1}, "result":function(){spawnWorker(workerTypes.goblin);}},
 			{"name":"Return Workers", "result":sendAllWorkersHome},
 			{"name":"Upgrade to Hobgoblin", "price":{"berries":500, "meat":5, "goblinseed":1},
 				"canSee":function(){ return knowsAboutResource(resources.meat); },
 				"canDo":function(){ return canUpgradeWorker(workerTypes.hobgoblin); },
 				"result":function(){ upgradeWorker(workerTypes.hobgoblin) }},
-			{"name":"Upgrade to Bugbear", "price":{"berries":1500, "wood":150, "goblinseed":1},
+			{"name":"Upgrade to Orc", "price":{"berries":1500, "wood":150, "goblinseed":1},
 				"canSee":function(){ return knowsAboutResource(resources.wood) && hasWorkerType(workerTypes.hobgoblin); },
-				"canDo":function(){ return canUpgradeWorker(workerTypes.bugbear); },
-				"result":function(){ upgradeWorker(workerTypes.bugbear) }},
+				"canDo":function(){ return canUpgradeWorker(workerTypes.orc); },
+				"result":function(){ upgradeWorker(workerTypes.orc) }},
 		]
 	},
 	"bush":{"displayname":"Berry Bushes", "image":"bush.png", "state":LOCATION_ACTIVE,
@@ -56,7 +71,12 @@ var locations =
 		]
 	},
 	"unknownlands":{"displayname":"Unknown Lands", "image":"map.png", "state":LOCATION_ACTIVE,
-		"actions":[{"name":"Scout", "income":{"exploration":0.1}}]
+		"actions":[
+			{"name":"Scout North", "maxTimes":1, "upgrade":1, "work":100, "result":function(){ discoverLocation(locations.deepwood); hideIfExhausted(locations.unknownlands); }},
+			{"name":"Scout South", "maxTimes":1, "upgrade":1, "work":100, "result":function(){ discoverLocation(locations.tower); hideIfExhausted(locations.unknownlands); }},
+			{"name":"Scout East", "maxTimes":1, "upgrade":1, "work":100, "result":function(){ discoverLocation(locations.huntingground); hideIfExhausted(locations.unknownlands); }},
+			{"name":"Scout West", "maxTimes":1, "upgrade":1, "work":100, "result":function(){ discoverLocation(locations.tradingpost); hideIfExhausted(locations.unknownlands); }},
+		]
 	},
 	
 	"huntingground":{"displayname":"Hunting Ground", "discovery":{"type":"exploration", "amount":20}, "image":"huntingground.png",
@@ -70,10 +90,20 @@ var locations =
 		"actions":[{"name":"Study", "income":{"arcane":1}}]
 	},
 	"pentagram_blueprint":{"displayname":"Pentagram", "discovery":{"type":"arcane", "amount":50}, "image":"pentagram_blueprint.png",
-		"actions":[{"name":"Build", "work":200, "transform":"pentagram"}]
+		"actions":[{"name":"Build", "work":500, "transform":"pentagram"}]
 	},
 	"pentagram":{"displayname":"Pentagram", "image":"pentagram.png",
-		"actions":[{"name":"Summon Demon"}]
+		"actions":[{"name":"Summon Shadow", "maxTimes":1, "work":500, "result":function(){spawnWorker(workerTypes.shadow);}}]
+	},
+	"conduit_blueprint":{"displayname":"Demonic Conduit", "discovery":{"type":"arcane", "amount":150}, "image":"conduit_blueprint.png",
+		"actions":[{"name":"Build", "work":500, "transform":"conduit"}]
+	},
+	"conduit":{"displayname":"Demonic Conduit", "image":"conduit.png",
+		"actions":[
+			{"name":"Upgrade Orc to Black Orc", "price":{"meat":1500, "goblinseed":1},
+				"canDo":function(){ return canUpgradeWorker(workerTypes.blackorc); },
+				"result":function(){ upgradeWorker(workerTypes.blackorc) }},
+		]
 	},
 
 	"deepwood":{"displayname":"Deepwood", "discovery":{"type":"exploration", "amount":150}, "image":"deepwood.png",
@@ -98,31 +128,14 @@ var locations =
 			}
 		}],
 	},
-/*	"tradingpost":{"displayname":"Trading Post", "explore":25, "image":"trader.png",
+	"tradingpost":{"displayname":"Trading Post", "explore":25, "image":"trader.png",
 		"actions":[
 			{"name":"Buy <img src='images/gold.png'>1 for ", "price":{"berries":1000}, "result":{"gold":1}},
 			{"name":"Buy <img src='images/gold.png'>10 for ", "price":{"berries":10000}, "result":{"gold":10}}
 		],
-	},*/
-}
-var nextMystery = undefined;
-
-var workerTypes =
-{
-  "empty":{"name":"empty", "displayname":"", "image":"", "strength":0, "upgrade":"goblin"},
-  "goblin":{"name":"goblin", "displayname":"Goblin", "image":"goblin.png", "strength":1, "price":{"berries":100, "goblinseed":1}, "upgrade":"hobgoblin"},
-  "hobgoblin":{"name":"hobgoblin", "displayname":"Hobgoblin", "image":"hobgoblin.png", "strength":6, "price":{"berries":1000}, "upgrade":"bugbear"},
-  "bugbear":{"name":"bugbear", "displayname":"Bugbear", "image":"bugbear.png", "strength":36, "price":{"berries":1000}, "upgrade":"orc"},
-  "orc":{"name":"orc", "displayname":"Orc", "image":"orc.png", "strength":200, "price":{"meat":50}, "upgrade":"blackorc"},
-  "blackorc":{"name":"blackorc", "displayname":"Black Orc", "image":"blackorc.png", "strength":1200, "price":{"meat":50}, "upgrade":"troll"},
-  "troll":{"name":"troll", "displayname":"Troll", "image":"troll.png", "strength":7000, "price":{"gold":10}, "upgrade":"ogre"},
-  "ogre":{"name":"ogre", "displayname":"Ogre", "image":"ogre.png", "strength":42000, "upgrade":"golem"},
-  "golem":{"name":"golem", "displayname":"Golem", "image":"golem.png", "strength":250000, "upgrade":"giant"},
-  "giant":{"name":"giant", "displayname":"Giant", "image":"giant.png", "strength":1500000},
+	},
 }
 
-var baseWorkerType = workerTypes["empty"];
-var upgradedWorkerType = workerTypes["goblin"];
 var workers = [];
 var tickInterval = 0.1; // seconds
 var idleAction = locations.queen.actions[1];
@@ -326,6 +339,21 @@ function discoverLocation(location)
 	updateLocations();
 }
 
+function hideIfExhausted(location)
+{
+	for( var Idx = 0; Idx < location.actions.length; ++Idx )
+	{
+		var action = location.actions[Idx];
+		if( canSeeAction(action) )
+		{
+			return;
+		}
+	}
+	
+	location.state = LOCATION_HIDDEN;
+	updateLocations();
+}
+
 //==========================================
 // JOBS AND ACTIONS
 //==========================================
@@ -445,6 +473,11 @@ function canSeeAction(action)
 			return false;
 		}
 	}
+
+	if( action.atUpgrade !== undefined && action.location.upgraded !== action.atUpgrade )
+	{
+		return false;
+	}
 	
 	if( action.canSee !== undefined && !action.canSee() )
 	{
@@ -548,15 +581,6 @@ function startAction(action)
 
 function doJobResult(job)
 {
-	if( typeof(job.result) === 'function' )
-	{
-		job.result();
-	}
-	else
-	{
-		gainResources(job.result);
-	}
-	
 	if( job.timesDone === undefined )
 	{
 		job.timesDone = 1;
@@ -564,6 +588,15 @@ function doJobResult(job)
 	else
 	{
 		job.timesDone++;
+	}
+	
+	if( typeof(job.result) === 'function' )
+	{
+		job.result();
+	}
+	else
+	{
+		gainResources(job.result);
 	}
 	
 	if( job.upgrade !== undefined )
@@ -656,9 +689,9 @@ function hasWorkerType(workerType)
 	return false;
 }
 
-function spawnGoblin()
+function spawnWorker(workerType)
 {
-	workers.push({"index":workers.length, "job":idleAction, "type":workerTypes.goblin});
+	workers.push({"index":workers.length, "job":idleAction, "type":workerType});
 	updateWorkforce();
 	updateLocations();
 }
